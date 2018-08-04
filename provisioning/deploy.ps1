@@ -76,7 +76,7 @@ $secureDbAdminPassword = ConvertTo-SecureString -String $dbAdminPassword -AsPlai
 
 # Start the deployment
 Write-Host "Starting deployment...";
-New-AzureRmResourceGroupDeployment -ResourceGroupName $ResourceGroupName -TemplateFile $templateFilePath -TemplateParameterFile $parametersFilePath -dbAdminPassword $secureDbAdminPassword;
+New-AzureRmResourceGroupDeployment -Verbose -ResourceGroupName $ResourceGroupName -TemplateFile $templateFilePath -TemplateParameterFile $parametersFilePath -dbAdminPassword $secureDbAdminPassword;
 
 # Add generated password to the Key Vault
 try {
