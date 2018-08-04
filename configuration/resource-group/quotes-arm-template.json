@@ -1,0 +1,144 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "dbAdminPassword": {
+          "type": "securestring",
+          "metadata": {
+            "description": "The administrator password for the Azure SQL Database servers."
+          }
+        }
+    },
+    "variables": {
+        "baseResourceName": "[toLower(replace(resourceGroup().name,'-rg',''))]",
+        "location": "[resourceGroup().location]",
+        "insightsName": "[concat(variables('baseResourceName'),'-ai')]",
+        "insightsApiVersion": "2015-05-01",
+        "dbServerName": "[concat(variables('baseResourceName'),'-dbs')]",
+        "dbServerApiVersion": "2015-05-01-preview",
+        "quotesDbName": "quotes-db",
+        "storageApiVersion": "2018-03-01-preview",
+        "storageName": "[concat(replace(variables('baseResourceName'),'-',''), 'data')]",
+        "storageResourceId": "[resourceId('Microsoft.Storage/storageAccounts/', variables('storageName'))]",
+        "hostingPlanName": "[concat(variables('baseResourceName'),'-plan')]",
+        "quotesServiceSiteName": "[concat(variables('baseResourceName'),'-quotes-service')]",
+        "quotesWebSiteName": "[concat(variables('baseResourceName'),'-quotes')]",
+        "sitesApiVersion": "2016-08-01"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Insights/components",
+            "kind": "web",
+            "name": "[variables('insightsName')]",
+            "apiVersion": "[variables('insightsApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "Application_Type": "web"
+            }
+        },
+        {
+            "type": "Microsoft.Sql/servers",
+            "kind": "v12.0",
+            "name": "[variables('dbServerName')]",
+            "apiVersion": "[variables('dbServerApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "administratorLogin": "cgiadmin",
+                "administratorLoginPassword": "[parameters('dbAdminPassword')]",
+                "version": "12.0"
+            },
+            "resources": [                
+                {
+                    "type": "databases",
+                    "sku": {
+                        "name": "Basic",
+                        "tier": "Basic"
+                    },
+                    "kind": "v12.0,user",
+                    "name": "[variables('quotesDbName')]",
+                    "apiVersion": "2017-03-01-preview",
+                    "location": "[variables('location')]",
+                    "properties": {
+                        "collation": "SQL_Latin1_General_CP1_CI_AS",
+                        "maxSizeBytes": 2147483648,
+                        "catalogCollation": "SQL_Latin1_General_CP1_CI_AS"
+                    },
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Sql/servers', variables('dbServerName'))]"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "name": "[variables('storageName')]",
+            "apiVersion": "[variables('storageApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "accessTier": "Hot"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "sku": {
+                "name": "F1",
+                "tier": "Free",
+                "size": "F1",
+                "family": "F",
+                "capacity": 0
+            },
+            "kind": "app",
+            "name": "[variables('hostingPlanName')]",
+            "apiVersion": "2016-09-01",
+            "location": "[variables('location')]"
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "kind": "app",
+            "name": "[variables('quotesServiceSiteName')]",
+            "apiVersion": "[variables('sitesApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
+            ]
+        },        
+        {
+            "type": "Microsoft.Web/sites",
+            "kind": "app",
+            "name": "[variables('quotesWebSiteName')]",
+            "apiVersion": "[variables('sitesApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
+            ]
+        }
+    ]
+}
