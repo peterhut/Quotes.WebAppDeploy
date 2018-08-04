@@ -45,6 +45,7 @@ Write-Host "Ensure you are logged into Azure before running the script.";
 Write-Host "Selecting subscription '$SubscriptionId'";
 Select-AzureRmSubscription -SubscriptionID $SubscriptionId;
 
+$subscriptionAadTenantId = (Get-AzureRmContext).Subscription.TenantId
 $azureAccountId = (Get-AzureRmContext).Account.Id
 $azureAccountType = (Get-AzureRmContext).Account.Type
 
@@ -76,7 +77,11 @@ $secureDbAdminPassword = ConvertTo-SecureString -String $dbAdminPassword -AsPlai
 
 # Start the deployment
 Write-Host "Starting deployment...";
-New-AzureRmResourceGroupDeployment -Verbose -ResourceGroupName $ResourceGroupName -TemplateFile $templateFilePath -TemplateParameterFile $parametersFilePath -dbAdminPassword $secureDbAdminPassword;
+$result = New-AzureRmResourceGroupDeployment -Verbose -ResourceGroupName $ResourceGroupName -TemplateFile $templateFilePath -TemplateParameterFile $parametersFilePath -dbAdminPassword $secureDbAdminPassword -aadTenantId $subscriptionAadTenantId;
+ 
+if ($result.ProvisioningState -ne "Succeeded") {
+    Write-Error "Resource Group deployment failed. See above for the errors. Final provisioning state: $($result.ProvisioningState)"
+}
 
 # Add generated password to the Key Vault
 try {
@@ -93,7 +98,7 @@ try {
     }
     $dbPasswordSecretName = "AzureSQLAdminPassword"
     $secret = Set-AzureKeyVaultSecret -VaultName $kv.VaultName -Name $dbPasswordSecretName -SecretValue $secureDbAdminPassword
-    Write-Information "Database Server admin account: cmsadmin. Password stored in Key Vault as secret $($secret.Name) with id $($secret.Id)"  
+    Write-Information "Database Server admin account: cgiadmin. Password stored in Key Vault as secret $($secret.Name) with id $($secret.Id)"  
 }
 Catch {
     Write-Warning "Failed to store passwords and keys in the Key Vault. Error: $_"

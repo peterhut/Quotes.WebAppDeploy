@@ -2,12 +2,6 @@
     "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
-        "aadTenantId": {
-          "type": "string",
-          "metadata": {
-            "description": "The identifier of the Azure AD of the subscription. Used to set the Access Policy on the Key Vault."
-          }
-        },
         "dbAdminPassword": {
           "type": "securestring",
           "metadata": {
@@ -18,12 +12,6 @@
     "variables": {
         "baseResourceName": "[toLower(replace(resourceGroup().name,'-rg',''))]",
         "location": "[resourceGroup().location]",
-        
-        "acrName": "[concat(replace(variables('baseResourceName'),'-',''),'acr')]",
-        "acrApiVersion": "2017-10-01",
-        "acrResourceId": "[resourceId('Microsoft.ContainerRegistry/registries/', variables('acrName'))]",
-        "keyVaultName": "[concat(variables('baseResourceName'),'-kv')]",
-        "keyVaultApiVersion": "2016-10-01",
         "insightsName": "[concat(variables('baseResourceName'),'-ai')]",
         "insightsApiVersion": "2015-05-01",
         "dbServerName": "[concat(variables('baseResourceName'),'-dbs')]",
@@ -34,46 +22,10 @@
         "storageResourceId": "[resourceId('Microsoft.Storage/storageAccounts/', variables('storageName'))]",
         "hostingPlanName": "[concat(variables('baseResourceName'),'-plan')]",
         "quotesServiceSiteName": "[concat(variables('baseResourceName'),'-quotes-service')]",
-        "quotesServiceContainerName": "quotesService:latest",
         "quotesWebSiteName": "[concat(variables('baseResourceName'),'-quotes')]",
-        "quotesWebSiteContainerName": "quotesWeb:latest",
-        "sitesApiVersion": "2016-08-01",
-
-        "identityApiVersion": "2015-08-31-PREVIEW",
-        "quotesServiceIdentityResourceId": "[concat(resourceId('Microsoft.Web/sites', variables('quotesServiceSiteName')), '/providers/Microsoft.ManagedIdentity/Identities/default')]",
-        "quotesWebIdentityResourceId": "[concat(resourceId('Microsoft.Web/sites', variables('quotesWebSiteName')), '/providers/Microsoft.ManagedIdentity/Identities/default')]"
+        "sitesApiVersion": "2016-08-01"
     },
     "resources": [
-        {
-            "type": "Microsoft.ContainerRegistry/registries",
-            "sku": {
-                "name": "Basic"
-            },
-            "name": "[variables('acrName')]",
-            "apiVersion": "[variables('acrApiVersion')]",
-            "location": "[variables('location')]",
-            "properties": {
-                "adminUserEnabled": true
-            }
-        },
-        {
-            "type": "Microsoft.KeyVault/vaults",
-            "name": "[variables('keyVaultName')]",
-            "apiVersion": "[variables('keyVaultApiVersion')]",
-            "location": "[variables('location')]",
-            "properties": {
-                "tenantId": "[parameters('aadTenantId')]",
-                "accessPolicies": [],
-                "sku": {
-                    "family": "A",
-                    "name": "standard"
-                }
-            },            
-            "dependsOn": [
-                "[resourceId('Microsoft.Web/sites', variables('quotesServiceSiteName'))]",
-                "[resourceId('Microsoft.Web/sites', variables('quotesWebSiteName'))]"
-            ]
-        },
         {
             "type": "Microsoft.Insights/components",
             "kind": "web",
@@ -135,40 +87,27 @@
         {
             "type": "Microsoft.Web/serverfarms",
             "sku": {
-                "name": "B1"
+                "name": "F1",
+                "tier": "Free",
+                "size": "F1",
+                "family": "F",
+                "capacity": 0
             },
-            "kind": "linux",
+            "kind": "app",
             "name": "[variables('hostingPlanName')]",
             "apiVersion": "2016-09-01",
             "location": "[variables('location')]"
         },
         {
             "type": "Microsoft.Web/sites",
-            "kind": "app,linux,container",
+            "kind": "app",
             "name": "[variables('quotesServiceSiteName')]",
             "apiVersion": "[variables('sitesApiVersion')]",
             "location": "[variables('location')]",
             "properties": {
-                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]", 
-                "httpsOnly": true,               
-                "identity": {
-                    "type": "SystemAssigned"
-                },
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
                 "siteConfig": {
-                    "linuxFxVersion": "[concat('DOCKER|', reference(variables('acrResourceId'), '2016-06-27-preview').loginServer, '/', variables('quotesServiceContainerName'))]",
                     "appSettings": [
-                        {
-                            "name": "DOCKER_REGISTRY_SERVER_URL",
-                            "value": "[concat('https://', reference(variables('acrResourceId'), '2016-06-27-preview').loginServer)]"
-                        },
-                        {
-                            "name": "DOCKER_REGISTRY_SERVER_USERNAME",
-                            "value": "[variables('acrName')]"
-                        },
-                        {
-                            "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
-                            "value": "[listCredentials(variables('acrResourceId'), '2017-10-01').passwords[0].value]"
-                        },
                         {
                             "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
                             "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
@@ -177,37 +116,19 @@
                 }
             },
             "dependsOn": [
-                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-                "[variables('acrResourceId')]"
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
             ]
         },        
         {
             "type": "Microsoft.Web/sites",
-            "kind": "app,linux,container",
+            "kind": "app",
             "name": "[variables('quotesWebSiteName')]",
             "apiVersion": "[variables('sitesApiVersion')]",
             "location": "[variables('location')]",
             "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-                "httpsOnly": true,
-                "identity": {
-                    "type": "SystemAssigned"
-                },
                 "siteConfig": {
-                    "linuxFxVersion": "[concat('DOCKER|', reference(variables('acrResourceId'), '2016-06-27-preview').loginServer, '/', variables('quotesWebSiteContainerName'))]",
                     "appSettings": [
-                        {
-                            "name": "DOCKER_REGISTRY_SERVER_URL",
-                            "value": "[concat('https://', reference(variables('acrResourceId'), '2016-06-27-preview').loginServer)]"
-                        },
-                        {
-                            "name": "DOCKER_REGISTRY_SERVER_USERNAME",
-                            "value": "[variables('acrName')]"
-                        },
-                        {
-                            "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
-                            "value": "[listCredentials(variables('acrResourceId'), '2017-10-01').passwords[0].value]"
-                        },
                         {
                             "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
                             "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
@@ -216,8 +137,7 @@
                 }
             },
             "dependsOn": [
-                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-                "[variables('acrResourceId')]"
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
             ]
         }
     ]
