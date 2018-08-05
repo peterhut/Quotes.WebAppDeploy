@@ -35,7 +35,7 @@ Function New-String([Int]$Size = 8, [Char[]]$CharSets = "ULNS", [Char[]]$Exclude
             U = [Char[]]'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                #Upper case
             L = [Char[]]'abcdefghijklmnopqrstuvwxyz'                                #Lower case
             N = [Char[]]'0123456789'                                                #Numerals
-            S = [Char[]]'!#%&()*+-/<>?@[\]^_|~'                         #Symbols
+            S = [Char[]]'!#%&()*+-/?@[]^_|~'                         #Symbols - removed <>\
         }
     }
     $CharSets | ForEach {

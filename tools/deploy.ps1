@@ -13,6 +13,12 @@
 
  .PARAMETER ResourceGroupLocation
     Optional, a resource group location. If specified, will try to create a new resource group in this location. If not specified, assumes resource group is existing.
+    
+ .PARAMETER Template
+    Optional, the template to deploy.
+    
+ .PARAMETER Type
+    Optional, the type of environment. Determines the parameters file that is used.
 #>
 
 param(
@@ -27,6 +33,9 @@ param(
     $ResourceGroupLocation = "West Europe",
 
     [string]
+    $Template = "linux-webapps",
+
+    [string]
     $Type = "small"
 )
 
@@ -37,7 +46,7 @@ $ScriptPath = $(Split-Path $MyInvocation.MyCommand.Path)
 # For New-Password function:
 . "$ScriptPath\common\UtilityLib.ps1"
 
-$templateFilePath = "$ScriptPath\..\configuration\resource-group\quotes-arm-template.json"
+$templateFilePath = "$ScriptPath\..\configuration\resource-group\template-$Template.json"
 $parametersFilePath = "$ScriptPath\..\configuration\resource-group\parameters-$Type.json"
 
 Write-Host "Ensure you are logged into Azure before running the script.";
@@ -71,7 +80,7 @@ else {
     Write-Host "Using existing resource group '$ResourceGroupName'";
 }
 
-    # generate password and pass to template as parameter
+# generate password and pass to template as parameter
 $dbAdminPassword = New-Password 12 ULNS "OLIoli01"
 $secureDbAdminPassword = ConvertTo-SecureString -String $dbAdminPassword -AsPlainText -Force
 
@@ -84,8 +93,11 @@ if ($result.ProvisioningState -ne "Succeeded") {
 }
 
 # Add generated password to the Key Vault
-try {
-    $kv = (Get-AzureRmKeyVault -ResourceGroupName $ResourceGroupName)[0]
+
+$kv = Get-AzureRmKeyVault -ResourceGroupName $ResourceGroupName -VaultName "$ResourceGroupName-kv"
+if ($kv) {
+    # Only set permissions and add secrets to Key vault if this resource group contains a Key Vault
+    
     if ($azureAccountType -eq "ServicePrincipal") {
         # Ensure Service Principal has sufficient permissions to add secret
         Set-AzureRmKeyVaultAccessPolicy -VaultName $kv.VaultName -ServicePrincipalName $azureAccountId -PermissionsToSecrets get, set, list
@@ -98,8 +110,5 @@ try {
     }
     $dbPasswordSecretName = "AzureSQLAdminPassword"
     $secret = Set-AzureKeyVaultSecret -VaultName $kv.VaultName -Name $dbPasswordSecretName -SecretValue $secureDbAdminPassword
-    Write-Information "Database Server admin account: cgiadmin. Password stored in Key Vault as secret $($secret.Name) with id $($secret.Id)"  
-}
-Catch {
-    Write-Warning "Failed to store passwords and keys in the Key Vault. Error: $_"
+    Write-Information "Database Server admin account: dbadmin. Password stored in Key Vault as secret $($secret.Name) with id $($secret.Id)"  
 }
