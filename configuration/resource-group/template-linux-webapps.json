@@ -25,8 +25,6 @@
     "variables": {
         "baseResourceName": "[toLower(replace(resourceGroup().name,'-rg',''))]",
         "location": "[resourceGroup().location]",
-        "keyVaultName": "[concat(variables('baseResourceName'),'-kv')]",
-        "keyVaultApiVersion": "2016-10-01",
         "insightsName": "[concat(variables('baseResourceName'),'-ai')]",
         "insightsApiVersion": "2015-05-01",
         "dbServerName": "[concat(variables('baseResourceName'),'-dbs')]",
@@ -37,28 +35,75 @@
         "storageName": "[concat(replace(variables('baseResourceName'),'-',''), 'data')]",
         "storageResourceId": "[resourceId('Microsoft.Storage/storageAccounts/', variables('storageName'))]",
         "hostingPlanName": "[concat(variables('baseResourceName'),'-plan')]",
-        "quotesServiceSiteName": "[concat(variables('baseResourceName'),'-quotes-service')]",
-        "quotesWebSiteName": "[concat(variables('baseResourceName'),'-quotes')]",
+        "quoteServiceSiteName": "[concat(variables('baseResourceName'),'-quote')]",
+        "quoteWebSiteName": "[concat(variables('baseResourceName'),'-web')]",
         "sitesApiVersion": "2016-08-01"
     },
-    "resources": [
+    "resources": [        
         {
-            "type": "Microsoft.KeyVault/vaults",
-            "name": "[variables('keyVaultName')]",
-            "apiVersion": "[variables('keyVaultApiVersion')]",
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('quoteServiceSiteName')]",
+            "apiVersion": "[variables('sitesApiVersion')]",
             "location": "[variables('location')]",
             "properties": {
-                "tenantId": "[parameters('aadTenantId')]",
-                "accessPolicies": [],
-                "sku": {
-                    "family": "A",
-                    "name": "standard"
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "linuxFxVersion": "dotnetcore|2.0",
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
+                        },                        
+                        {
+                            "name": "ConnectionString",
+                            "value": "[concat('Server=tcp:', reference(concat('Microsoft.Sql/servers/', variables('dbServerName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('quotesDbName'), ';Persist Security Info=False;User ID=', parameters('dbAdminUserName'), ';Password=', parameters('dbAdminPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
+                        }
+                    ]
                 }
-            },            
+            },
             "dependsOn": [
-                "[resourceId('Microsoft.Web/sites', variables('quotesServiceSiteName'))]",
-                "[resourceId('Microsoft.Web/sites', variables('quotesWebSiteName'))]"
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "[resourceId('Microsoft.Sql/servers', variables('dbServerName'))]"
             ]
+        },        
+        {
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('quoteWebSiteName')]",
+            "apiVersion": "[variables('sitesApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "linuxFxVersion": "dotnetcore|2.0",
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
+                        },
+                        {
+                            "name": "QuoteService",
+                            "value": "[concat('https://',variables('quoteServiceSiteName'),'.azurewebsites.net')]"
+                        },                        
+                        {
+                            "name": "StorageConnectionString",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageName'), ';AccountKey=', listkeys(variables('storageResourceId'), variables('storageApiVersion')).keys[0].value)]"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "sku": {
+                "name": "B1"
+            },
+            "kind": "linux",
+            "name": "[variables('hostingPlanName')]",
+            "apiVersion": "2016-09-01",
+            "location": "[variables('location')]"
         },
         {
             "type": "Microsoft.Insights/components",
@@ -103,7 +148,7 @@
                 },
                 {
                     "type": "firewallRules",
-                    "name": "parameters('dbFirewallRuleName'))]",
+                    "name": "[variables('dbFirewallRuleName')]",
                     "apiVersion": "2015-05-01-preview",
                     "properties": {
                         "startIpAddress": "0.0.0.0",
@@ -129,71 +174,7 @@
                 "supportsHttpsTrafficOnly": true,
                 "accessTier": "Hot"
             }
-        },
-        {
-            "type": "Microsoft.Web/serverfarms",
-            "sku": {
-                "name": "B1"
-            },
-            "kind": "linux",
-            "name": "[variables('hostingPlanName')]",
-            "apiVersion": "2016-09-01",
-            "location": "[variables('location')]"
-        },
-        {
-            "type": "Microsoft.Web/sites",
-            "name": "[variables('quotesServiceSiteName')]",
-            "apiVersion": "[variables('sitesApiVersion')]",
-            "location": "[variables('location')]",
-            "properties": {
-                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-                "siteConfig": {
-                    "linuxFxVersion": "dotnetcore|2.0",
-                    "appSettings": [
-                        {
-                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
-                        },                        
-                        {
-                            "name": "ConnectionString",
-                            "value": "[concat('Server=tcp:', reference(concat('Microsoft.Sql/servers/', variables('dbServerName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('quotesDbName'), ';Persist Security Info=False;User ID=', parameters('dbAdminUserName'), ';Password=', parameters('dbAdminPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
-                        }
-                    ]
-                }
-            },
-            "dependsOn": [
-                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-                "[resourceId('Microsoft.Sql/servers', variables('dbServerName'))]"
-            ]
-        },        
-        {
-            "type": "Microsoft.Web/sites",
-            "name": "[variables('quotesWebSiteName')]",
-            "apiVersion": "[variables('sitesApiVersion')]",
-            "location": "[variables('location')]",
-            "properties": {
-                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
-                "siteConfig": {
-                    "linuxFxVersion": "dotnetcore|2.0",
-                    "appSettings": [
-                        {
-                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
-                        },
-                        {
-                            "name": "QuotesService",
-                            "value": "[concat('https://',variables('quotesServiceSiteName'),'.azurewebsites.net')]"
-                        },                        
-                        {
-                            "name": "StorageConnectionString",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageName'), ';AccountKey=', listkeys(variables('storageResourceId'), variables('storageApiVersion')).keys[0].value)]"
-                        }
-                    ]
-                }
-            },
-            "dependsOn": [
-                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
-            ]
         }
+        
     ]
 }
