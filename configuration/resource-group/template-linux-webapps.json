@@ -1,0 +1,180 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "aadTenantId": {
+          "type": "string",
+          "metadata": {
+            "description": "The identifier of the Azure AD of the subscription. Used to set the Access Policy on the Key Vault."
+          }
+        },
+        "dbAdminUserName": {
+            "defaultValue": "dbadmin",
+            "type": "string",
+            "metadata": {
+              "description": "The administrator username for the Azure SQL Database servers."
+            }
+        },
+        "dbAdminPassword": {
+          "type": "securestring",
+          "metadata": {
+            "description": "The administrator password for the Azure SQL Database servers."
+          }
+        }
+    },
+    "variables": {
+        "baseResourceName": "[toLower(replace(resourceGroup().name,'-rg',''))]",
+        "location": "[resourceGroup().location]",
+        "insightsName": "[concat(variables('baseResourceName'),'-ai')]",
+        "insightsApiVersion": "2015-05-01",
+        "dbServerName": "[concat(variables('baseResourceName'),'-dbs')]",
+        "dbServerApiVersion": "2015-05-01-preview",
+        "dbFirewallRuleName": "AllowAllWindowsAzureIps",
+        "quotesDbName": "quotes-db",
+        "storageApiVersion": "2018-03-01-preview",
+        "storageName": "[concat(replace(variables('baseResourceName'),'-',''), 'data')]",
+        "storageResourceId": "[resourceId('Microsoft.Storage/storageAccounts/', variables('storageName'))]",
+        "hostingPlanName": "[concat(variables('baseResourceName'),'-plan')]",
+        "quoteServiceSiteName": "[concat(variables('baseResourceName'),'-quote')]",
+        "quoteWebSiteName": "[concat(variables('baseResourceName'),'-web')]",
+        "sitesApiVersion": "2016-08-01"
+    },
+    "resources": [        
+        {
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('quoteServiceSiteName')]",
+            "apiVersion": "[variables('sitesApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "linuxFxVersion": "dotnetcore|2.0",
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
+                        },                        
+                        {
+                            "name": "ConnectionString",
+                            "value": "[concat('Server=tcp:', reference(concat('Microsoft.Sql/servers/', variables('dbServerName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('quotesDbName'), ';Persist Security Info=False;User ID=', parameters('dbAdminUserName'), ';Password=', parameters('dbAdminPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "[resourceId('Microsoft.Sql/servers', variables('dbServerName'))]"
+            ]
+        },        
+        {
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('quoteWebSiteName')]",
+            "apiVersion": "[variables('sitesApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "linuxFxVersion": "dotnetcore|2.0",
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(concat('Microsoft.Insights/components/', variables('insightsName'))).InstrumentationKey]"
+                        },
+                        {
+                            "name": "QuoteService",
+                            "value": "[concat('https://',variables('quoteServiceSiteName'),'.azurewebsites.net')]"
+                        },                        
+                        {
+                            "name": "StorageConnectionString",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageName'), ';AccountKey=', listkeys(variables('storageResourceId'), variables('storageApiVersion')).keys[0].value)]"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "sku": {
+                "name": "B1"
+            },
+            "kind": "linux",
+            "name": "[variables('hostingPlanName')]",
+            "apiVersion": "2016-09-01",
+            "location": "[variables('location')]"
+        },
+        {
+            "type": "Microsoft.Insights/components",
+            "kind": "web",
+            "name": "[variables('insightsName')]",
+            "apiVersion": "[variables('insightsApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "Application_Type": "web"
+            }
+        },
+        {
+            "type": "Microsoft.Sql/servers",
+            "kind": "v12.0",
+            "name": "[variables('dbServerName')]",
+            "apiVersion": "[variables('dbServerApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "administratorLogin": "[parameters('dbAdminUserName')]",
+                "administratorLoginPassword": "[parameters('dbAdminPassword')]",
+                "version": "12.0"
+            },
+            "resources": [                
+                {
+                    "type": "databases",
+                    "sku": {
+                        "name": "Basic",
+                        "tier": "Basic"
+                    },
+                    "kind": "v12.0,user",
+                    "name": "[variables('quotesDbName')]",
+                    "apiVersion": "2017-03-01-preview",
+                    "location": "[variables('location')]",
+                    "properties": {
+                        "collation": "SQL_Latin1_General_CP1_CI_AS",
+                        "maxSizeBytes": 2147483648,
+                        "catalogCollation": "SQL_Latin1_General_CP1_CI_AS"
+                    },
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Sql/servers', variables('dbServerName'))]"
+                    ]
+                },
+                {
+                    "type": "firewallRules",
+                    "name": "[variables('dbFirewallRuleName')]",
+                    "apiVersion": "2015-05-01-preview",
+                    "properties": {
+                        "startIpAddress": "0.0.0.0",
+                        "endIpAddress": "0.0.0.0"
+                    },
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Sql/servers', variables('dbServerName'))]"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "name": "[variables('storageName')]",
+            "apiVersion": "[variables('storageApiVersion')]",
+            "location": "[variables('location')]",
+            "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "accessTier": "Hot"
+            }
+        }
+        
+    ]
+}
